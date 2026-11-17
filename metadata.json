@@ -1,0 +1,6 @@
+{
+  "name": "GridCut — Laser-Cut Gridfinity Baseplate Generator",
+  "description": "Parametric CAD generator for multi-layer laser-cut Gridfinity baseplates with kerf compensation, bed tiling, and clean SVG/DXF vector export.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

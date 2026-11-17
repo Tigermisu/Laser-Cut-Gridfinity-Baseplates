@@ -2,7 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { exportAllSheetsToDxf, exportPartToDxf, exportSheetToDxf } from './cad/dxfExporter';
 import { generateGridfinityBaseplate } from './cad/geometry';
 import { DEFAULT_CONFIG } from './cad/gridfinitySpec';
-import { parsePresetJson, serializePresetJson } from './cad/presetIO';
+import {
+  clearSavedConfigFromStorage,
+  GRIDCUT_UI_STORAGE_KEY,
+  loadSavedConfigFromStorage,
+  parsePresetJson,
+  saveConfigToStorage,
+  serializePresetJson,
+} from './cad/presetIO';
 import { exportAllSheetsToSvg, exportPartToSvg, exportSheetToSvg } from './cad/svgExporter';
 import type {
   GeneratedTileLayer,
@@ -14,30 +21,86 @@ import { CadViewport } from './components/CadViewport';
 import { ExportPanel } from './components/ExportPanel';
 import { ParameterSidebar } from './components/ParameterSidebar';
 import { ReferenceModal } from './components/ReferenceModal';
+import { ResetConfirmModal } from './components/ResetConfirmModal';
 import { TopBar } from './components/TopBar';
 import { sanitizeSlug, triggerTextDownload } from './utils/download';
 
+interface PersistedUiState {
+  viewportMode?: ViewportMode;
+  userThemeOverride?: 'light' | 'dark' | null;
+  manifestCollapsed?: boolean;
+}
+
+function loadUiStateFromStorage(): PersistedUiState {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(GRIDCUT_UI_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as PersistedUiState;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 export default function App() {
-  const [config, setConfig] = useState<GridfinityConfig>(DEFAULT_CONFIG);
-  const [viewportMode, setViewportMode] = useState<ViewportMode>('stacked');
+  const initialUi = useMemo(() => loadUiStateFromStorage(), []);
+
+  const [config, setConfig] = useState<GridfinityConfig>(() =>
+    loadSavedConfigFromStorage()
+  );
+  const [viewportMode, setViewportMode] = useState<ViewportMode>(() => {
+    const m = initialUi.viewportMode;
+    return m === 'stacked' || m === 'sheet' || m === 'cross-section'
+      ? m
+      : 'stacked';
+  });
   const [selectedPartId, setSelectedPartId] = useState<string | null>(null);
   const [lastExportMessage, setLastExportMessage] = useState<string | null>(null);
-  const [manifestCollapsed, setManifestCollapsed] = useState(false);
+  const [manifestCollapsed, setManifestCollapsed] = useState<boolean>(() =>
+    typeof initialUi.manifestCollapsed === 'boolean'
+      ? initialUi.manifestCollapsed
+      : false
+  );
   const [presetFeedback, setPresetFeedback] = useState<{
     type: 'success' | 'error';
     message: string;
   } | null>(null);
   const [referenceOpen, setReferenceOpen] = useState(false);
   const [referenceTab, setReferenceTab] = useState<'heritage' | 'laser-guide'>('heritage');
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
 
   // Auto-select theme based on prefers-color-scheme, allowing manual toggle override
-  const [userThemeOverride, setUserThemeOverride] = useState<'light' | 'dark' | null>(null);
+  const [userThemeOverride, setUserThemeOverride] = useState<'light' | 'dark' | null>(() => {
+    const t = initialUi.userThemeOverride;
+    return t === 'light' || t === 'dark' ? t : null;
+  });
   const [systemPrefersDark, setSystemPrefersDark] = useState<boolean>(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
       return false;
     }
     return window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
+
+  // Automatically persist baseplate configuration to localStorage
+  useEffect(() => {
+    saveConfigToStorage(config);
+  }, [config]);
+
+  // Automatically persist UI preferences (viewportMode, theme override, manifest collapse)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const payload: PersistedUiState = {
+        viewportMode,
+        userThemeOverride,
+        manifestCollapsed,
+      };
+      window.localStorage.setItem(GRIDCUT_UI_STORAGE_KEY, JSON.stringify(payload));
+    } catch {
+      // Ignore storage errors
+    }
+  }, [viewportMode, userThemeOverride, manifestCollapsed]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
@@ -70,11 +133,16 @@ export default function App() {
     setConfig((prev) => ({ ...prev, ...patch }));
   };
 
-  const handleReset = () => {
+  const handleConfirmReset = () => {
+    clearSavedConfigFromStorage();
     setConfig(DEFAULT_CONFIG);
     setSelectedPartId(null);
     setLastExportMessage(null);
-    setPresetFeedback(null);
+    setResetConfirmOpen(false);
+    setPresetFeedback({
+      type: 'success',
+      message: 'Reset all parameters to default settings',
+    });
   };
 
   const baseName = `gridfinity-${model.dimensions.cols}x${model.dimensions.rows}-${config.stackArchitecture}`;
@@ -164,7 +232,7 @@ export default function App() {
           config={config}
           dimensions={model.dimensions}
           onChange={handlePatchConfig}
-          onReset={handleReset}
+          onReset={() => setResetConfirmOpen(true)}
           onSavePreset={handleSavePreset}
           onLoadPresetText={handleLoadPresetText}
           presetFeedback={presetFeedback}
@@ -204,6 +272,12 @@ export default function App() {
         activeTab={referenceTab}
         onChangeTab={setReferenceTab}
         onClose={() => setReferenceOpen(false)}
+      />
+
+      <ResetConfirmModal
+        open={resetConfirmOpen}
+        onConfirm={handleConfirmReset}
+        onCancel={() => setResetConfirmOpen(false)}
       />
     </div>
   );

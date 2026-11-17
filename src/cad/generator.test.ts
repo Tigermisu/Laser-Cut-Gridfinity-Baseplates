@@ -15,7 +15,14 @@ import {
   polylineToSvgPath,
 } from './svgExporter';
 import { exportAllSheetsToDxf, exportPartToDxf } from './dxfExporter';
-import { parsePresetJson, serializePresetJson } from './presetIO';
+import {
+  clearSavedConfigFromStorage,
+  GRIDCUT_CONFIG_STORAGE_KEY,
+  loadSavedConfigFromStorage,
+  parsePresetJson,
+  saveConfigToStorage,
+  serializePresetJson,
+} from './presetIO';
 import type {
   GridfinityConfig,
   VectorCircle,
@@ -348,6 +355,44 @@ test('base geometry nominalEntities vs kerf-compensated toolpath overlay entitie
   assert.ok(Math.abs(overlayOuterW - (84.0 + 1.2)) < 1e-6);
   assert.ok(Math.abs(overlayInnerW - (37.4 - 1.2)) < 1e-6);
 });
+
+test('localStorage persistence helpers save, restore, and clear configuration safely', () => {
+  const store = new Map<string, string>();
+  const mockStorage = {
+    getItem: (k: string) => store.get(k) ?? null,
+    setItem: (k: string, v: string) => {
+      store.set(k, v);
+    },
+    removeItem: (k: string) => {
+      store.delete(k);
+    },
+  };
+
+  // Empty storage falls back to DEFAULT_CONFIG
+  assert.deepEqual(loadSavedConfigFromStorage(mockStorage), DEFAULT_CONFIG);
+
+  const modified: GridfinityConfig = {
+    ...DEFAULT_CONFIG,
+    gridCols: 8,
+    gridRows: 5,
+    kerfMm: 0.2,
+    skeletonizeBacking: true,
+  };
+  saveConfigToStorage(modified, mockStorage);
+  assert.ok(store.has(GRIDCUT_CONFIG_STORAGE_KEY));
+  assert.deepEqual(loadSavedConfigFromStorage(mockStorage), modified);
+
+  // Corrupted storage falls back to DEFAULT_CONFIG without throwing
+  store.set(GRIDCUT_CONFIG_STORAGE_KEY, '{not-valid-json');
+  assert.deepEqual(loadSavedConfigFromStorage(mockStorage), DEFAULT_CONFIG);
+
+  // Clearing storage removes key and restores DEFAULT_CONFIG
+  saveConfigToStorage(modified, mockStorage);
+  clearSavedConfigFromStorage(mockStorage);
+  assert.equal(store.has(GRIDCUT_CONFIG_STORAGE_KEY), false);
+  assert.deepEqual(loadSavedConfigFromStorage(mockStorage), DEFAULT_CONFIG);
+});
+
 
 
 

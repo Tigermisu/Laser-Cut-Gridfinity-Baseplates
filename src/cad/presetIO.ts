@@ -208,3 +208,59 @@ export function parsePresetJson(rawJson: string): GridfinityConfig {
     ),
   };
 }
+
+export const GRIDCUT_CONFIG_STORAGE_KEY = 'gridcut:config:v1';
+export const GRIDCUT_UI_STORAGE_KEY = 'gridcut:ui:v1';
+
+/**
+ * Load and validate a persisted GridfinityConfig from localStorage (or custom storage),
+ * falling back to DEFAULT_CONFIG when empty, unavailable, or invalid.
+ */
+export function loadSavedConfigFromStorage(
+  storage: Pick<Storage, 'getItem'> | null = typeof window !== 'undefined'
+    ? window.localStorage
+    : null
+): GridfinityConfig {
+  if (!storage) return DEFAULT_CONFIG;
+  try {
+    const raw = storage.getItem(GRIDCUT_CONFIG_STORAGE_KEY);
+    if (!raw) return DEFAULT_CONFIG;
+    return parsePresetJson(raw);
+  } catch {
+    return DEFAULT_CONFIG;
+  }
+}
+
+/**
+ * Persist the current GridfinityConfig to localStorage (or custom storage).
+ */
+export function saveConfigToStorage(
+  config: GridfinityConfig,
+  storage: Pick<Storage, 'setItem'> | null = typeof window !== 'undefined'
+    ? window.localStorage
+    : null
+): void {
+  if (!storage) return;
+  try {
+    storage.setItem(GRIDCUT_CONFIG_STORAGE_KEY, serializePresetJson(config));
+  } catch {
+    // Ignore storage quota / private browsing errors
+  }
+}
+
+/**
+ * Remove the persisted GridfinityConfig from localStorage (or custom storage).
+ */
+export function clearSavedConfigFromStorage(
+  storage: Pick<Storage, 'removeItem'> | null = typeof window !== 'undefined'
+    ? window.localStorage
+    : null
+): void {
+  if (!storage) return;
+  try {
+    storage.removeItem(GRIDCUT_CONFIG_STORAGE_KEY);
+  } catch {
+    // Ignore storage errors
+  }
+}
+
